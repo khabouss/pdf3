@@ -2,8 +2,7 @@
   <div
     class="fixed z-50 lg:right-4 lg:top-24 lg:w-64"
     :class="{
-      'inset-x-0 bottom-0': true,
-      'inset-x-0 bottom-0': isOpen && isMobile,
+      'inset-x-0 bottom-0': isMobile,
       'bg-white rounded-lg shadow-lg': true
     }"
     :style="{

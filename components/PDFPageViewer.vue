@@ -3,73 +3,56 @@
   <div class="space-y-4">
     <!-- Page List -->
     <div class="space-y-4">
-      <div
-        v-for="(_, index) in pageCount"
-        :key="index"
-        :ref="el => { if (el) pageRefs[index] = el }"
+      <div v-for="(_, index) in pageCount" :key="index" :ref="el => { if (el) pageRefs[index] = el }"
         :data-page-index="index"
-        class="relative group border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex items-center"
+        class="relative group border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col items-center"
         :class="{
           'bg-white': currentPage !== index,
           'bg-indigo-50 border-indigo-200': currentPage === index
-        }"
-      >
+        }">
         <!-- Page Preview -->
-        <div class="flex-none px-4 py-3">
-          <span class="text-gray-400 font-medium">{{ index + 1 }}</span>
-        </div>
-        
-        <div class="flex-1 p-3">
-          <div
-            class="w-[595px] h-[842px] origin-top-left bg-white border shadow-sm transform-gpu cursor-pointer"
-            ref="el => { if (el) pageContainers[index] = el }"
-            :data-page-container-index="index"
-          >
-            <canvas
-              :width="595"
-              :height="842"
-              class="w-full h-full"
-            ></canvas>
-            
-            <!-- Draggable Text Elements -->
-            <div
-              v-for="(text, id) in getPageTextElements(index)"
-              :key="id"
-              class="absolute cursor-move"
-              @mousedown="startDragging($event, id)"
-              :style="{
-                transform: `translate(${text.x}px, ${text.y}px)`,
-                color: text.color,
-                fontSize: `${text.fontSize}px`,
-                userSelect: 'none',
-                cursor: isDragging && selectedTextId === id ? 'grabbing' : 'grab'
-              }"
-            >
-              {{ text.content }}
+        <div class="flex flex-col items-center self-start ml-2" :class="{ 'self-center': isMobile || isLarge }">
+          <div class="py-3 text-center w-fit">
+            <div class="">
+              <button @click="removePage(index)"
+                class="text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
             </div>
-            
+            <span class="text-gray-400 font-medium">{{ index + 1 }}</span>
+          </div>
+
+          <div class="flex-1 p-3">
+            <div class="w-[595px] h-[842px] origin-top-left bg-white border shadow-sm transform-gpu cursor-pointer"
+              ref="el => { if (el) pageContainers[index] = el }" :data-page-container-index="index">
+              <canvas :width="595" :height="842" class="w-full h-full"></canvas>
+
+              <!-- Draggable Text Elements -->
+              <div v-for="(text, id) in getPageTextElements(index)" :key="id" class="absolute cursor-move"
+                @mousedown="startDragging($event, id)" :style="{
+                  transform: `translate(${text.x}px, ${text.y}px)`,
+                  color: text.color,
+                  fontSize: `${text.fontSize}px`,
+                  userSelect: 'none',
+                  cursor: isDragging && selectedTextId === id ? 'grabbing' : 'grab'
+                }">
+                {{ text.content }}
+              </div>
+
+            </div>
           </div>
         </div>
 
-        <div class="flex-none px-4">
-          <button
-            @click="removePage(index)"
-            class="p-2 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
       </div>
 
       <!-- Action Buttons -->
       <div class="flex space-x-4">
         <!-- Add Blank Page Button -->
-        <button
-          @click="$emit('add-blank-page')"
-          class="flex-1 p-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
-        >
+        <button @click="$emit('add-blank-page')"
+          class="flex-1 p-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
@@ -77,12 +60,11 @@
         </button>
 
         <!-- Add PDF Button -->
-        <button
-          @click="$emit('add-pdf')"
-          class="flex-1 p-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
-        >
+        <button @click="$emit('add-pdf')"
+          class="flex-1 p-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           <span>Upload PDF</span>
         </button>
@@ -95,6 +77,7 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { PDFDocument, rgb } from 'pdf-lib'
 import * as PDFJS from 'pdfjs-dist'
+import { useWindowSize } from '@vueuse/core'
 import { useThrottleFn, useElementBounding, useIntersectionObserver } from '@vueuse/core'
 
 // Initialize PDF.js worker
@@ -102,12 +85,16 @@ const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url)
 PDFJS.GlobalWorkerOptions.workerSrc = workerSrc
 
 const props = defineProps<{
-  pdf: PDFDocument
+  pdf: PDFDocument | null
   toolsRef: any
 }>()
 
+const { width } = useWindowSize()
+const isMobile = computed(() => width.value < 1024)
+const isLarge = computed(() => width.value >= 1200)
+
 const emit = defineEmits(['update:pdf', 'add-blank-page', 'add-pdf'])
-const pageRefs = ref<{ [key: number]: HTMLElement }>({})
+const pageRefs = ref<{ [key: number]: Element | ComponentPublicInstance }>({})
 const renderedPages = ref(new Set<number>())
 const currentPage = ref<number>(0)
 const textElements = ref<{ [key: string]: { x: number; y: number; content: string; fontSize: number; color: string; pageIndex: number } }>({})
@@ -117,11 +104,11 @@ const initialMousePosition = ref({ x: 0, y: 0 })
 const draggedElement = ref<HTMLElement | null>(null)
 const { x: elementX, y: elementY } = useElementBounding(draggedElement)
 
-const pageCount = computed(() => props.pdf.getPageCount())
+const pageCount = computed(() => props.pdf?.getPageCount())
 
 // Cache for loaded PDFs to prevent repeated loading
 let loadedPdfDoc: any = null
-let pdfBytes: Uint8Array | null = null
+let pdfBytes: Uint8Array | null | undefined = null
 
 // Cleanup function to release resources
 const cleanup = () => {
@@ -135,16 +122,16 @@ const cleanup = () => {
 
 const renderPage = async (pageIndex: number) => {
   if (renderedPages.value.has(pageIndex)) return
-  
+
   const pageElement = pageRefs.value[pageIndex]
   if (!pageElement) return
-  
+
   const canvas = pageElement.querySelector('canvas')
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) return
 
   try {
     if (!loadedPdfDoc) {
-      pdfBytes = await props.pdf.save()
+      pdfBytes = await props.pdf?.save()
       loadedPdfDoc = await PDFJS.getDocument({
         data: pdfBytes,
         useWorkerFetch: true,
@@ -160,7 +147,7 @@ const renderPage = async (pageIndex: number) => {
     )
     const viewport = page.getViewport({ scale })
     const context = canvas.getContext('2d')
-    
+
     if (context) {
       await page.render({
         canvasContext: context,
@@ -215,14 +202,14 @@ const removePage = async (pageIndex: number) => {
     const newPdf = await PDFDocument.create()
     const pageIndices = props.pdf.getPageIndices().filter(i => i !== pageIndex)
     const pages = await newPdf.copyPages(props.pdf, pageIndices)
-    
+
     // Copy page properties
     pages.forEach(page => newPdf.addPage(page))
-    
+
     // Force cleanup of old PDF resources
     cleanup()
     renderedPages.value.clear()
-    
+
     emit('update:pdf', newPdf)
   } catch (error) {
     console.error('Error removing page:', error)
@@ -266,28 +253,28 @@ const startDragging = (event: MouseEvent, id: string) => {
   selectedTextId.value = id
   draggedElement.value = event.target as HTMLElement
   isDragging.value = true
-  
+
   const text = textElements.value[id]
   initialMousePosition.value = { x: event.clientX, y: event.clientY }
-  
+
   document.addEventListener('mousemove', handleDragging)
   document.addEventListener('mouseup', stopDragging)
 }
 
 const handleDragging = (event: MouseEvent) => {
   if (!isDragging.value || !selectedTextId.value) return
-  
+
   const dx = event.clientX - initialMousePosition.value.x
   const dy = event.clientY - initialMousePosition.value.y
-  
+
   if (draggedElement.value) {
     const bounds = draggedElement.value.getBoundingClientRect()
     const containerBounds = draggedElement.value.parentElement?.getBoundingClientRect()
-    
+
     if (containerBounds) {
       const newX = elementX.value + dx
       const newY = elementY.value + dy
-      
+
       // Keep text within page bounds
       textElements.value[selectedTextId.value].x = Math.max(0, Math.min(newX, containerBounds.width - bounds.width))
       textElements.value[selectedTextId.value].y = Math.max(0, Math.min(newY, containerBounds.height - bounds.height))
@@ -301,19 +288,22 @@ const stopDragging = () => {
     draggedElement.value = null
     updatePDFWithText()
   }
-  
+
   document.removeEventListener('mousemove', handleDragging)
   document.removeEventListener('mouseup', stopDragging)
 }
 
 const updatePDFWithText = async () => {
   const newPdf = await PDFDocument.create()
+  if (!props.pdf) {
+    throw new Error("pdf is undefined or null in PDFPageViewer");
+  }
   const pages = await newPdf.copyPages(props.pdf, props.pdf.getPageIndices())
 
   pages.forEach((page, pageIndex) => {
     newPdf.addPage(page)
     const pageTexts = getPageTextElements(pageIndex)
-    
+
     Object.values(pageTexts).forEach(text => {
       const { r, g, b } = hexToRgb(text.color)
       page.drawText(text.content, {
