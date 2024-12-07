@@ -42,7 +42,6 @@
       <div class="space-y-6">
         <!-- Initial Upload -->
         <PDFDropzone
-          :multiple="true"
           :max-file-size-m-b="50"
           @file-added="handleFileAdded"
           @files-added="handleFilesAdded"
@@ -52,10 +51,11 @@
         <!-- PDF Pages -->
         <div v-if="currentPDF" class="space-y-4">
           <PDFPageViewer
-            v-model:pdf="currentPDF"
+            :pdf="currentPDF"
             :tools-ref="toolsRef"
             @add-blank-page="handleAddBlankPage"
             @add-pdf="handleAddPDF"
+            @update:pdf="handleRemovePage"
           />
           
           <button
@@ -72,7 +72,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { PDFDocument, PageSizes, degrees } from 'pdf-lib'
+import { PDFDocument, PageSizes } from 'pdf-lib'
 import { useTimeoutFn } from '@vueuse/core'
 import PDFEditButton from './PDFEditButton.vue'
 import PDFToolsSidebar from './PDFToolsSidebar.vue'
@@ -118,6 +118,10 @@ const handleFilesAdded = async (files: File[]) => {
   } finally {
     isProcessing.value = false
   }
+}
+
+const handleRemovePage = (pageIndex: number) => {
+  currentPDF.value?.removePage(pageIndex);
 }
 
 const handleAddBlankPage = async () => {

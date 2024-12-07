@@ -16,7 +16,6 @@
       ref="fileInput"
       type="file"
       :accept="accept"
-      :multiple="multiple"
       class="hidden"
       @change="handleFileSelect"
     />
@@ -44,10 +43,6 @@ const props = defineProps({
   accept: {
     type: String,
     default: '.pdf'
-  },
-  multiple: {
-    type: Boolean,
-    default: false
   },
   maxFileSizeMB: {
     type: Number,
@@ -82,11 +77,7 @@ const handleFiles = (fileList: FileList) => {
   const validFiles = validateFiles(files)
 
   if (validFiles.length) {
-    if (props.multiple) {
-      emit('files-added', validFiles)
-    } else {
-      emit('file-added', validFiles[0])
-    }
+    emit('files-added', validFiles)
   }
 }
 

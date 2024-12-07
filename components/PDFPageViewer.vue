@@ -27,7 +27,7 @@
 
           <div class="flex-1 p-3">
             <div class="w-[595px] h-[842px] origin-top-left bg-white border shadow-sm transform-gpu cursor-pointer"
-              ref="el => { if (el) pageContainers[index] = el }" :data-page-container-index="index">
+              :ref="el => { if (el) pageRefs[index] = el }" :data-page-container-index="index">
               <canvas :width="595" :height="842" class="w-full h-full"></canvas>
 
               <!-- Draggable Text Elements -->
@@ -85,7 +85,7 @@ const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url)
 PDFJS.GlobalWorkerOptions.workerSrc = workerSrc
 
 const props = defineProps<{
-  pdf: PDFDocument | null
+  pdf: Object | null
   toolsRef: any
 }>()
 
@@ -104,7 +104,7 @@ const initialMousePosition = ref({ x: 0, y: 0 })
 const draggedElement = ref<HTMLElement | null>(null)
 const { x: elementX, y: elementY } = useElementBounding(draggedElement)
 
-const pageCount = computed(() => props.pdf?.getPageCount())
+const pageCount = computed(() => (props.pdf as PDFDocument)?.getPageCount())
 
 // Cache for loaded PDFs to prevent repeated loading
 let loadedPdfDoc: any = null
@@ -126,12 +126,12 @@ const renderPage = async (pageIndex: number) => {
   const pageElement = pageRefs.value[pageIndex]
   if (!pageElement) return
 
-  const canvas = pageElement.querySelector('canvas')
+  const canvas = (pageElement as Element).querySelector('canvas')
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) return
 
   try {
     if (!loadedPdfDoc) {
-      pdfBytes = await props.pdf?.save()
+      pdfBytes = await (props.pdf as PDFDocument)?.save()
       loadedPdfDoc = await PDFJS.getDocument({
         data: pdfBytes,
         useWorkerFetch: true,
@@ -163,7 +163,7 @@ const renderPage = async (pageIndex: number) => {
 // Throttled render function to prevent too many simultaneous renders
 const throttledRender = useThrottleFn(renderPage, 100)
 
-watch(() => props.pdf, async () => {
+watch(() => (props.pdf as PDFDocument), async () => {
   // Re-render all pages when PDF changes
   cleanup()
   // Initial render of visible pages
@@ -193,24 +193,11 @@ const observer = new IntersectionObserver(observerCallback, {
 
 const removePage = async (pageIndex: number) => {
   try {
-    if (!props.pdf || props.pdf.getPageCount() <= 1) {
+    if (!(props.pdf as PDFDocument) || (props.pdf as PDFDocument).getPageCount() <= 1) {
       console.warn('Cannot remove the last page')
       return
     }
-
-    // Create new PDF and copy pages
-    const newPdf = await PDFDocument.create()
-    const pageIndices = props.pdf.getPageIndices().filter(i => i !== pageIndex)
-    const pages = await newPdf.copyPages(props.pdf, pageIndices)
-
-    // Copy page properties
-    pages.forEach(page => newPdf.addPage(page))
-
-    // Force cleanup of old PDF resources
-    cleanup()
-    renderedPages.value.clear()
-
-    emit('update:pdf', newPdf)
+    emit('update:pdf', pageIndex);
   } catch (error) {
     console.error('Error removing page:', error)
   }
@@ -248,9 +235,12 @@ const getPageTextElements = (pageIndex: number) => {
 }
 
 // Dragging functionality
-const startDragging = (event: MouseEvent, id: string) => {
+const startDragging = (event: MouseEvent, id: string | number) => {
   event.preventDefault()
-  selectedTextId.value = id
+  if (typeof id === 'number')
+    selectedTextId.value = id.toString()
+  else
+    selectedTextId.value = id
   draggedElement.value = event.target as HTMLElement
   isDragging.value = true
 
@@ -295,10 +285,10 @@ const stopDragging = () => {
 
 const updatePDFWithText = async () => {
   const newPdf = await PDFDocument.create()
-  if (!props.pdf) {
+  if (!(props.pdf as PDFDocument)) {
     throw new Error("pdf is undefined or null in PDFPageViewer");
   }
-  const pages = await newPdf.copyPages(props.pdf, props.pdf.getPageIndices())
+  const pages = await newPdf.copyPages((props.pdf as PDFDocument), (props.pdf as PDFDocument).getPageIndices())
 
   pages.forEach((page, pageIndex) => {
     newPdf.addPage(page)
@@ -322,7 +312,7 @@ const updatePDFWithText = async () => {
 onMounted(() => {
   // Let the intersection observer handle initial rendering
   Object.entries(pageRefs.value).forEach(([index, element]) => {
-    observer.observe(element)
+    observer.observe(element as Element)
   })
 })
 
