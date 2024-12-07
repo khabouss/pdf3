@@ -1,38 +1,30 @@
 <template>
   <div class="bg-white shadow sm:rounded-lg">
-    <PDFToolsSidebar
-      v-if="currentPDF"
-      ref="toolsRef"
-      :current-page="currentPage"
-      v-model:is-open="isToolbarOpen"
-    />
-    <PDFEditButton
-      v-if="currentPDF"
-      @click="isToolbarOpen = !isToolbarOpen"
-    />
+    <PDFToolsSidebar v-if="currentPDF" ref="toolsRef" :current-page="currentPage" :is-open="isToolbarOpen"
+      @update:close-popup="closeToolbar"
+      v-click-outside="closeToolbar" />
+    <PDFEditButton v-if="currentPDF" @click="openToolbar" />
     <div class="px-4 py-5 sm:p-6">
       <!-- Error Alert -->
-      <div
-        v-if="error"
-        class="mb-4 p-4 rounded-md bg-red-50 border border-red-200"
-      >
+      <div v-if="error" class="mb-4 p-4 rounded-md bg-red-50 border border-red-200">
         <div class="flex">
           <div class="flex-shrink-0">
             <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              <path fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clip-rule="evenodd" />
             </svg>
           </div>
           <div class="ml-3">
             <p class="text-sm text-red-700">{{ error }}</p>
           </div>
           <div class="ml-auto pl-3">
-            <button
-              @click="error = ''"
-              class="inline-flex text-red-400 hover:text-red-500"
-            >
+            <button @click="error = ''" class="inline-flex text-red-400 hover:text-red-500">
               <span class="sr-only">Dismiss</span>
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                <path fill-rule="evenodd"
+                  d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                  clip-rule="evenodd" />
               </svg>
             </button>
           </div>
@@ -41,32 +33,22 @@
 
       <div class="space-y-6">
         <!-- Initial Upload -->
-        <PDFDropzone
-          :max-file-size-m-b="50"
-          @file-added="handleFileAdded"
-          @files-added="handleFilesAdded"
-          @error="handleError"
-        />
+        <PDFDropzone :max-file-size-m-b="50" @file-added="handleFileAdded" @files-added="handleFilesAdded"
+          @error="handleError" />
 
         <!-- PDF Pages -->
         <div v-if="currentPDF" class="space-y-4">
-          <PDFPageViewer
-            :pdf="currentPDF"
-            :tools-ref="toolsRef"
-            @add-blank-page="handleAddBlankPage"
-            @add-pdf="handleAddPDF"
-            @update:pdf="handleRemovePage"
-          />
-          
-          <button
-            @click="downloadPDF"
-            class="w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-          >
+          <PDFPageViewer ref="pageViewer" :pdf="currentPDF" :tools-ref="toolsRef" @add-blank-page="handleAddBlankPage"
+            @add-pdf="handleAddPDF" @remove:pdf="handleRemovePage" @update:pdf="updatePDF" />
+
+          <button @click="downloadPDF"
+            class="w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
             Download PDF
           </button>
         </div>
       </div>
     </div>
+    <BottomButton/>
   </div>
 </template>
 
@@ -83,6 +65,7 @@ const isProcessing = ref(false)
 const toolsRef = ref(null)
 const currentPage = ref(0)
 const isToolbarOpen = ref(false)
+const pageViewer = ref(null);
 
 const clearError = useTimeoutFn(() => {
   error.value = ''
@@ -104,14 +87,14 @@ const handleFilesAdded = async (files: File[]) => {
   try {
     isProcessing.value = true
     const mergedPdf = await PDFDocument.create()
-    
+
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer()
       const pdf = await PDFDocument.load(arrayBuffer)
       const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices())
       pages.forEach(page => mergedPdf.addPage(page))
     }
-    
+
     currentPDF.value = mergedPdf
   } catch (error) {
     handleError(error instanceof Error ? error.message : 'Error merging PDFs')
@@ -124,9 +107,26 @@ const handleRemovePage = (pageIndex: number) => {
   currentPDF.value?.removePage(pageIndex);
 }
 
+const updatePDF = (newPDF: PDFDocument) => {
+  currentPDF.value = newPDF;
+}
+
+function openToolbar(event: any) {
+  console.log("open");
+  event?.stopPropagation();
+  isToolbarOpen.value = true;
+}
+
+function closeToolbar(event: any) {
+  console.log("close");
+  
+  event?.stopPropagation();
+  isToolbarOpen.value = false;
+}
+
 const handleAddBlankPage = async () => {
   if (!currentPDF.value) return
-  
+
   const page = currentPDF.value.addPage(PageSizes.A4)
   currentPDF.value = currentPDF.value
 }
@@ -143,7 +143,7 @@ const handleAddPDF = () => {
       isProcessing.value = true
       const arrayBuffer = await file.arrayBuffer()
       const newPdf = await PDFDocument.load(arrayBuffer)
-      
+
       if (currentPDF.value) {
         const pages = await currentPDF.value.copyPages(newPdf, newPdf.getPageIndices())
         pages.forEach(page => currentPDF.value!.addPage(page))
@@ -161,13 +161,13 @@ const handleAddPDF = () => {
 }
 const downloadPDF = async () => {
   if (!currentPDF.value) return
-
+  (pageViewer.value as any).updatePDFWithText();
   try {
     isProcessing.value = true
     const pdfBytes = await currentPDF.value.save()
     const blob = new Blob([pdfBytes], { type: 'application/pdf' })
     const url = URL.createObjectURL(blob)
-    
+
     const link = document.createElement('a')
     link.href = url
     link.download = 'modified.pdf'

@@ -26,21 +26,27 @@
           </div>
 
           <div class="flex-1 p-3">
-            <div class="w-[595px] h-[842px] origin-top-left bg-white border shadow-sm transform-gpu cursor-pointer"
+            <div id="pdfContainer"
+              class="w-[595px] h-[842px]  bg-transparent relative origin-top-left border shadow-sm transform-gpu cursor-pointer"
               :ref="el => { if (el) pageRefs[index] = el }" :data-page-container-index="index">
-              <canvas :width="595" :height="842" class="w-full h-full"></canvas>
-
-              <!-- Draggable Text Elements -->
-              <div v-for="(text, id) in getPageTextElements(index)" :key="id" class="absolute cursor-move"
-                @mousedown="startDragging($event, id)" :style="{
-                  transform: `translate(${text.x}px, ${text.y}px)`,
-                  color: text.color,
-                  fontSize: `${text.fontSize}px`,
-                  userSelect: 'none',
-                  cursor: isDragging && selectedTextId === id ? 'grabbing' : 'grab'
-                }">
-                {{ text.content }}
+              <div v-for="(textElement, index2) in textElements" :key="index2"
+                class="absolute cursor-move bg-transparent" :style="{
+                  top: textElement.y + 'px',
+                  left: textElement.x + 'px',
+                }" draggable="true" @dragstart="onDragStart(index2, $event)" @dragend="onDragEnd(index2, $event)">
+                <div v-if="textElement.pageIndex === index" class="p-2 border rounded-md shadow-md relative"
+                  :style="{ fontSize: textElement.fontSize + 'px', color: textElement.color, lineHeight: textElement.lineHeight }">
+                  {{ textElement.content }}
+                  <!-- Delete Button -->
+                  <button class="absolute -top-[10px] -right-[10px] bg-red-500 text-white rounded-full px-2 py-1 text-xs"
+                    @click="deleteTextElement(index2)">
+                    X
+                  </button>
+                </div>
               </div>
+
+
+              <canvas id="contentCanvas" :width="595" :height="842" class="w-full h-full"></canvas>
 
             </div>
           </div>
@@ -49,7 +55,7 @@
       </div>
 
       <!-- Action Buttons -->
-      <div class="flex space-x-4">
+      <div class="flex space-x-4" id="bottom-action-buttons">
         <!-- Add Blank Page Button -->
         <button @click="$emit('add-blank-page')"
           class="flex-1 p-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors">
@@ -91,19 +97,15 @@ const props = defineProps<{
 
 const { width } = useWindowSize()
 const isMobile = computed(() => width.value < 1024)
-const isLarge = computed(() => width.value >= 1200)
+const isLarge = computed(() => width.value >= 1400)
 
-const emit = defineEmits(['update:pdf', 'add-blank-page', 'add-pdf'])
+const emit = defineEmits(['remove:pdf', 'update:pdf', 'add-blank-page', 'add-pdf', 'pdf-error'])
+const eventBus = useNuxtApp().$eventBus as any;
+
 const pageRefs = ref<{ [key: number]: Element | ComponentPublicInstance }>({})
 const renderedPages = ref(new Set<number>())
 const currentPage = ref<number>(0)
-const textElements = ref<{ [key: string]: { x: number; y: number; content: string; fontSize: number; color: string; pageIndex: number } }>({})
-const selectedTextId = ref<string | null>(null)
-const isDragging = ref(false)
-const initialMousePosition = ref({ x: 0, y: 0 })
-const draggedElement = ref<HTMLElement | null>(null)
-const { x: elementX, y: elementY } = useElementBounding(draggedElement)
-
+const textElements = ref<{ [key: string]: { x: number; y: number; content: string; fontSize: string; color: string; pageIndex: number, lineHeight: string } }>({})
 const pageCount = computed(() => (props.pdf as PDFDocument)?.getPageCount())
 
 // Cache for loaded PDFs to prevent repeated loading
@@ -120,13 +122,42 @@ const cleanup = () => {
   pdfBytes = null
 }
 
+const dragStartPos = ref({ x: 0, y: 0 });
+
+function onDragStart(index: number | string, event: any) {
+  const pdfContainer = document.getElementById("pdfContainer");
+  if (pdfContainer === null) return;
+  const drawRect = pdfContainer.getBoundingClientRect();
+
+  dragStartPos.value = {
+    x: event.clientX - textElements.value[index].x - drawRect.left,
+    y: event.clientY - textElements.value[index].y - drawRect.top,
+  };
+}
+
+function deleteTextElement(key: string|number) {
+  delete textElements.value[key]
+}
+
+function onDragEnd(index: number | string, event: any) {
+  const pdfContainer = document.getElementById("pdfContainer");
+  if (pdfContainer === null) return;
+  const drawRect = pdfContainer.getBoundingClientRect();
+
+  const newLeft = event.clientX - dragStartPos.value.x - drawRect.left;
+  const newTop = event.clientY - dragStartPos.value.y - drawRect.top;
+
+  textElements.value[index].x = newLeft;
+  textElements.value[index].y = newTop;
+}
+
 const renderPage = async (pageIndex: number) => {
   if (renderedPages.value.has(pageIndex)) return
 
   const pageElement = pageRefs.value[pageIndex]
   if (!pageElement) return
 
-  const canvas = (pageElement as Element).querySelector('canvas')
+  const canvas = (pageElement as Element).querySelector('#contentCanvas')
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) return
 
   try {
@@ -197,7 +228,7 @@ const removePage = async (pageIndex: number) => {
       console.warn('Cannot remove the last page')
       return
     }
-    emit('update:pdf', pageIndex);
+    emit('remove:pdf', pageIndex);
   } catch (error) {
     console.error('Error removing page:', error)
   }
@@ -212,8 +243,7 @@ const hexToRgb = (hex: string) => {
   } : { r: 0, g: 0, b: 0 }
 }
 
-const addTextToPage = async (pageIndex: number) => {
-  const settings = props.toolsRef.textSettings
+const addTextToPage = async (pageIndex: number, settings: any) => {
   const textId = `text-${Date.now()}-${Math.random()}`
   textElements.value[textId] = {
     x: 50,
@@ -221,6 +251,7 @@ const addTextToPage = async (pageIndex: number) => {
     content: settings.content,
     fontSize: settings.fontSize,
     color: settings.color,
+    lineHeight: settings.lineHeight,
     pageIndex
   }
 }
@@ -234,82 +265,54 @@ const getPageTextElements = (pageIndex: number) => {
   }, {} as typeof textElements.value)
 }
 
-// Dragging functionality
-const startDragging = (event: MouseEvent, id: string | number) => {
-  event.preventDefault()
-  if (typeof id === 'number')
-    selectedTextId.value = id.toString()
-  else
-    selectedTextId.value = id
-  draggedElement.value = event.target as HTMLElement
-  isDragging.value = true
-
-  const text = textElements.value[id]
-  initialMousePosition.value = { x: event.clientX, y: event.clientY }
-
-  document.addEventListener('mousemove', handleDragging)
-  document.addEventListener('mouseup', stopDragging)
-}
-
-const handleDragging = (event: MouseEvent) => {
-  if (!isDragging.value || !selectedTextId.value) return
-
-  const dx = event.clientX - initialMousePosition.value.x
-  const dy = event.clientY - initialMousePosition.value.y
-
-  if (draggedElement.value) {
-    const bounds = draggedElement.value.getBoundingClientRect()
-    const containerBounds = draggedElement.value.parentElement?.getBoundingClientRect()
-
-    if (containerBounds) {
-      const newX = elementX.value + dx
-      const newY = elementY.value + dy
-
-      // Keep text within page bounds
-      textElements.value[selectedTextId.value].x = Math.max(0, Math.min(newX, containerBounds.width - bounds.width))
-      textElements.value[selectedTextId.value].y = Math.max(0, Math.min(newY, containerBounds.height - bounds.height))
-    }
-  }
-}
-
-const stopDragging = () => {
-  if (isDragging.value) {
-    isDragging.value = false
-    draggedElement.value = null
-    updatePDFWithText()
-  }
-
-  document.removeEventListener('mousemove', handleDragging)
-  document.removeEventListener('mouseup', stopDragging)
-}
-
 const updatePDFWithText = async () => {
-  const newPdf = await PDFDocument.create()
-  if (!(props.pdf as PDFDocument)) {
-    throw new Error("pdf is undefined or null in PDFPageViewer");
-  }
-  const pages = await newPdf.copyPages((props.pdf as PDFDocument), (props.pdf as PDFDocument).getPageIndices())
-
+  const pages = (props.pdf as PDFDocument).getPages();
   pages.forEach((page, pageIndex) => {
-    newPdf.addPage(page)
     const pageTexts = getPageTextElements(pageIndex)
-
+    textElements.value = {};
     Object.values(pageTexts).forEach(text => {
       const { r, g, b } = hexToRgb(text.color)
       page.drawText(text.content, {
         x: text.x,
         y: page.getHeight() - text.y,
-        size: text.fontSize,
+        size: parseInt(text.fontSize, 10),
         color: rgb(r / 255, g / 255, b / 255),
-        lineHeight: 1.2
+        lineHeight: parseInt(text.lineHeight, 10)
       })
     })
-  })
+  });
 
-  emit('update:pdf', newPdf)
+  // const newPdf = await PDFDocument.create()
+  // if (!(props.pdf as PDFDocument)) {
+  //   throw new Error("pdf is undefined or null in PDFPageViewer");
+  // }
+  // const pages = await newPdf.copyPages((props.pdf as PDFDocument), [0, 1]) //(props.pdf as PDFDocument).getPageIndices()
+
+  // pages.forEach((page, pageIndex) => {
+  //   const pageTexts = getPageTextElements(pageIndex)
+
+  //   Object.values(pageTexts).forEach(text => {
+  //     const { r, g, b } = hexToRgb(text.color)
+  //     page.drawText(text.content, {
+  //       x: text.x,
+  //       y: 50,
+  //       size: 23,
+  //       color: rgb(r / 255, g / 255, b / 255),
+  //       lineHeight: 1.2
+  //     })
+  //   })
+  //   newPdf.addPage(page)
+  // })
+
+  // emit('update:pdf', newPdf)
 }
 
 onMounted(() => {
+  eventBus.on('addTextToPDF', (data: any) => {
+    if (data.isCurrentPage) {
+      addTextToPage(currentPage.value, data.settings)
+    }
+  });
   // Let the intersection observer handle initial rendering
   Object.entries(pageRefs.value).forEach(([index, element]) => {
     observer.observe(element as Element)
@@ -317,9 +320,14 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  eventBus.off('addTextToPDF');
   cleanup()
-  document.removeEventListener('mousemove', handleDragging)
-  document.removeEventListener('mouseup', stopDragging)
   observer.disconnect()
 })
+
+defineExpose({
+  updatePDFWithText
+})
 </script>
+
+<style></style>
