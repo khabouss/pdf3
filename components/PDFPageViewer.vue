@@ -330,7 +330,7 @@ const renderDrawing = (canvas: HTMLCanvasElement, drawing: any) => {
 
 const dragStartPos = ref({ x: 0, y: 0 });
 
-function onDragStart(index: number | string, event: any, element: 'text' | 'image' | 'whiteout' | 'link' | 'highlight' | 'shape') {
+function onDragStart(index: number | string, event: any, element: DraggableElementsType) {
   console.log("dragstart", index, element);
 
   const elements = {
@@ -367,7 +367,7 @@ function deleteHighlightElement(key: string | number) {
   delete highlightElements.value[key]
 }
 
-function onDragEnd(index: number | string, event: any, element: 'text' | 'image' | 'whiteout' | 'link' | 'highlight' | 'shape') {
+function onDragEnd(index: number | string, event: any, element: DraggableElementsType) {
   const pdfContainer = document.getElementById("pdfContainer");
   if (pdfContainer === null) return;
   const drawRect = pdfContainer.getBoundingClientRect();
