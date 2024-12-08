@@ -1,7 +1,7 @@
 <template>
   <div class="bg-white shadow sm:rounded-lg">
     <PDFToolsSidebar v-if="currentPDF" ref="toolsRef" :current-page="currentPage" :is-open="isToolbarOpen"
-      @update:close-popup="closeToolbar"
+      @update:close-popup="closeToolbar" :pdf="currentPDF"
       v-click-outside="closeToolbar" />
     <PDFEditButton v-if="currentPDF" @click="openToolbar" />
     <div class="px-4 py-5 sm:p-6">
@@ -161,7 +161,7 @@ const handleAddPDF = () => {
 }
 const downloadPDF = async () => {
   if (!currentPDF.value) return
-  (pageViewer.value as any).updatePDFWithText();
+  (pageViewer.value as any).updatePDFWithNewContent();
   try {
     isProcessing.value = true
     const pdfBytes = await currentPDF.value.save()

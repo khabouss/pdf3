@@ -1,15 +1,17 @@
 <!-- PDF page viewer with page management -->
 <template>
   <div class="space-y-4">
+
     <!-- Page List -->
     <div class="space-y-4">
-      <div v-for="(_, index) in pageCount" :key="index" :ref="el => { if (el) pageRefs[index] = el }"
+      <div v-for="(_, index) in pageCount" :key="index" :ref="(el: any) => { if (el) pageRefs[index] = el }"
         :data-page-index="index"
         class="relative group border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col items-center"
         :class="{
           'bg-white': currentPage !== index,
           'bg-indigo-50 border-indigo-200': currentPage === index
         }">
+
         <!-- Page Preview -->
         <div class="flex flex-col items-center self-start ml-2" :class="{ 'self-center': isMobile || isLarge }">
           <div class="py-3 text-center w-fit">
@@ -28,25 +30,40 @@
           <div class="flex-1 p-3">
             <div id="pdfContainer"
               class="w-[595px] h-[842px]  bg-transparent relative origin-top-left border shadow-sm transform-gpu cursor-pointer"
-              :ref="el => { if (el) pageRefs[index] = el }" :data-page-container-index="index">
-              <div v-for="(textElement, index2) in textElements" :key="index2"
-                class="absolute cursor-move bg-transparent" :style="{
-                  top: textElement.y + 'px',
-                  left: textElement.x + 'px',
-                }" draggable="true" @dragstart="onDragStart(index2, $event)" @dragend="onDragEnd(index2, $event)">
-                <div v-if="textElement.pageIndex === index" class="p-2 border rounded-md shadow-md relative"
-                  :style="{ fontSize: textElement.fontSize + 'px', color: textElement.color, lineHeight: textElement.lineHeight }">
-                  {{ textElement.content }}
-                  <!-- Delete Button -->
-                  <button class="absolute -top-[10px] -right-[10px] bg-red-500 text-white rounded-full px-2 py-1 text-xs"
-                    @click="deleteTextElement(index2)">
-                    X
-                  </button>
-                </div>
-              </div>
+              :ref="(el: any) => { if (el) pageRefs[index] = el }" :data-page-container-index="index">
 
+              <TextComponent v-for="(textElement, index2) in textElements" :key="index2"
+                @drag-start="($event) => onDragStart(index2, $event, 'text')"
+                @drag-end="($event) => onDragEnd(index2, $event, 'text')" @delete-element="deleteTextElement(index2)"
+                :text-element="textElement" :index="index" />
+
+              <ImageComponent v-for="(imageElement, index2) in imageElements" :key="index2"
+                @resize-start="($event) => onResizeStart(index2, $event)"
+                @drag-start="($event) => onDragStart(index2, $event, 'image')"
+                @drag-end="($event) => onDragEnd(index2, $event, 'image')" @delete-element="deleteImageElement(index2)"
+                :image-element="imageElement" :index="index" />
+
+              <WhiteoutComponent v-for="(whiteoutElement, index2) in whiteoutElements" :key="index2"
+                @drag-start="($event) => onDragStart(index2, $event, 'whiteout')"
+                @drag-end="($event) => onDragEnd(index2, $event, 'whiteout')"
+                @delete-element="deleteWhiteoutElement(index2)" :whiteout-element="whiteoutElement" :index="index" />
+
+              <HighlightComponent v-for="(highlightElement, index2) in highlightElements" :key="index2"
+                @drag-start="($event) => onDragStart(index2, $event, 'highlight')"
+                @drag-end="($event) => onDragEnd(index2, $event, 'highlight')"
+                @delete-element="deleteHighlightElement(index2)" :highlight-element="highlightElement" :index="index" />
 
               <canvas id="contentCanvas" :width="595" :height="842" class="w-full h-full"></canvas>
+
+              <!-- Drawing Canvas -->
+              <canvas v-if="isDrawingMode && currentPage === index" ref="drawCanvas"
+                class="absolute top-0 left-0 w-full h-full cursor-crosshair" @mousedown="startPath"
+                @mousemove="drawPath" @mouseup="endPath" @mouseleave="endPath"></canvas>
+
+              <!-- Rendered Drawings -->
+              <canvas v-for="(drawing, drawingId) in getPageDrawings(index)" :key="drawingId"
+                :ref="(el: any) => { if (el) renderDrawing(el, drawing) }"
+                class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
 
             </div>
           </div>
@@ -81,10 +98,14 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, watch } from 'vue'
-import { PDFDocument, rgb } from 'pdf-lib'
+import { PDFDocument } from 'pdf-lib'
 import * as PDFJS from 'pdfjs-dist'
 import { useWindowSize } from '@vueuse/core'
-import { useThrottleFn, useElementBounding, useIntersectionObserver } from '@vueuse/core'
+import { useThrottleFn } from '@vueuse/core'
+import { PDFContentUpdater } from '~/utils/pdfContentUpdater'
+import TextComponent from './TextComponent.vue'
+import ImageComponent from './ImageComponent.vue'
+import HighlightComponent from './HighlightComponent.vue'
 
 // Initialize PDF.js worker
 const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).href
@@ -102,19 +123,62 @@ const isLarge = computed(() => width.value >= 1400)
 const emit = defineEmits(['remove:pdf', 'update:pdf', 'add-blank-page', 'add-pdf', 'pdf-error'])
 const eventBus = useNuxtApp().$eventBus as any;
 
+type ImageType = { x: number; y: number; width: number; imageData: Uint8Array; pageIndex: number }
+type TextType = { x: number; y: number; content: string; fontSize: string; color: string; pageIndex: number, lineHeight: string }
+type WithoutType = { x: number; y: number; width: number; height: number; opacity: number; pageIndex: number }
+type LinkType = { x: number; y: number; width: number; height: number; url: string; pageIndex: number }
+type HighlightType = { x: number; y: number; width: number; height: number; color: string; opacity: number; pageIndex: number }
+type DrawType = { paths: { x: number; y: number }[][]; color: string; brushSize: number; opacity: number; pageIndex: number }
+type ShapeType = { type: string; x: number; y: number; width?: number; height?: number; length?: number; angle?: number; lineWidth: number; color: string; fill: boolean; pageIndex: number }
+type DraggableElementsType = 'text' | 'image' | 'whiteout' | 'link' | 'highlight' | 'shape';
+
 const pageRefs = ref<{ [key: number]: Element | ComponentPublicInstance }>({})
 const renderedPages = ref(new Set<number>())
 const currentPage = ref<number>(0)
-const textElements = ref<{ [key: string]: { x: number; y: number; content: string; fontSize: string; color: string; pageIndex: number, lineHeight: string } }>({})
+const textElements = ref<{ [key: string]: TextType }>({})
+const imageElements = ref<{ [key: string]: ImageType }>({})
+const whiteoutElements = ref<{ [key: string]: WithoutType }>({})
+const linkElements = ref<{ [key: string]: LinkType }>({})
+const highlightElements = ref<{ [key: string]: HighlightType }>({})
+const drawElements = ref<{ [key: string]: DrawType }>({})
+const shapeElements = ref<{ [key: string]: ShapeType }>({})
+const isDrawingMode = ref(false)
+const currentPath = ref<{ x: number; y: number }[]>([])
+const drawSettings = ref({
+  color: '#000000',
+  brushSize: 2,
+  opacity: 1
+})
 const pageCount = computed(() => (props.pdf as PDFDocument)?.getPageCount())
+const draggableElements = {
+  'text': textElements,
+  'image': imageElements,
+  'whiteout': whiteoutElements,
+  'link': linkElements,
+  'highlight': highlightElements,
+  'shape': shapeElements,
+};
+const draggableElemebtsEvents = {
+  'addTextToPDF': 'text',
+  'addShapeToPDF': 'shape',
+  'addImageToPDF': 'image',
+  'addWhiteoutToPDF': 'whiteout',
+  'addHighlightToPDF': 'highlight',
+  'addLinkToPDF': 'link'
+};
 
 // Cache for loaded PDFs to prevent repeated loading
 let loadedPdfDoc: any = null
 let pdfBytes: Uint8Array | null | undefined = null
 
+const isResizing = ref(false);
+const resizeStartPos = reactive({ x: 0, y: 0 });
+const activeIndexIMG = ref<null | string>(null);
+
 // Cleanup function to release resources
 const cleanup = () => {
   renderedPages.value.clear()
+  clearDrawing()
   if (loadedPdfDoc) {
     loadedPdfDoc.destroy()
     loadedPdfDoc = null
@@ -122,24 +186,188 @@ const cleanup = () => {
   pdfBytes = null
 }
 
+const onResizeStart = (index: any, event: any) => {
+  isResizing.value = true;
+  activeIndexIMG.value = index;
+  resizeStartPos.x = event.clientX;
+  resizeStartPos.y = event.clientY;
+
+  document.addEventListener('mousemove', onResize);
+  document.addEventListener('mouseup', onResizeEnd);
+};
+
+function modifyImageWidth(value: number) {
+  const modifiedObject = {
+    ...imageElements.value,
+    [activeIndexIMG.value as string]: {
+      ...imageElements.value[activeIndexIMG.value as string],
+      width: imageElements.value[activeIndexIMG.value as string].width + value,
+    },
+  };
+  imageElements.value = modifiedObject;
+}
+
+const onResize = (event: any) => {
+  if (!isResizing.value) return;
+
+  const deltaX = event.clientX - resizeStartPos.x;
+
+  modifyImageWidth(deltaX);
+
+  resizeStartPos.x = event.clientX;
+  resizeStartPos.y = event.clientY;
+};
+
+const onResizeEnd = () => {
+  isResizing.value = false;
+  document.removeEventListener('mousemove', onResize);
+  document.removeEventListener('mouseup', onResizeEnd);
+};
+
+const clearDrawing = () => {
+  const canvas = document.querySelector('canvas[ref="drawCanvas"]') as HTMLCanvasElement;
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+}
+
+const startPath = (event: MouseEvent) => {
+  if (!isDrawingMode.value) return;
+
+  const canvas = event.target as HTMLCanvasElement;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  currentPath.value = [{ x, y }];
+  drawOnCanvas(canvas, currentPath.value);
+};
+
+const drawPath = (event: MouseEvent) => {
+  if (!isDrawingMode.value || currentPath.value.length === 0) return;
+
+  const canvas = event.target as HTMLCanvasElement;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  currentPath.value.push({ x, y });
+  drawOnCanvas(canvas, currentPath.value);
+};
+
+const endPath = () => {
+  if (!isDrawingMode.value || currentPath.value.length === 0) return;
+
+  const drawingId = `drawing-${Date.now()}-${Math.random()}`;
+  drawElements.value[drawingId] = {
+    paths: [currentPath.value],
+    color: drawSettings.value.color,
+    brushSize: drawSettings.value.brushSize,
+    opacity: drawSettings.value.opacity,
+    pageIndex: currentPage.value
+  };
+
+  currentPath.value = [];
+  clearDrawing();
+};
+
+const drawOnCanvas = (canvas: HTMLCanvasElement, path: { x: number; y: number }[]) => {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || path.length < 2) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+
+  for (let i = 1; i < path.length; i++) {
+    ctx.lineTo(path[i].x, path[i].y);
+  }
+
+  ctx.strokeStyle = drawSettings.value.color;
+  ctx.lineWidth = drawSettings.value.brushSize;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = drawSettings.value.opacity;
+  ctx.stroke();
+};
+
+const getPageDrawings = (pageIndex: number) => {
+  return Object.entries(drawElements.value).reduce((acc, [id, drawing]) => {
+    if (drawing.pageIndex === pageIndex) {
+      acc[id] = drawing;
+    }
+    return acc;
+  }, {} as typeof drawElements.value);
+};
+
+const renderDrawing = (canvas: HTMLCanvasElement, drawing: any) => {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = drawing.color;
+  ctx.lineWidth = drawing.brushSize;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = drawing.opacity;
+
+  drawing.paths.forEach((path: { x: number; y: number }[]) => {
+    if (path.length < 2) return;
+
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
+
+    ctx.stroke();
+  });
+};
+
 const dragStartPos = ref({ x: 0, y: 0 });
 
-function onDragStart(index: number | string, event: any) {
+function onDragStart(index: number | string, event: any, element: 'text' | 'image' | 'whiteout' | 'link' | 'highlight' | 'shape') {
+  console.log("dragstart", index, element);
+
+  const elements = {
+    'text': textElements,
+    'image': imageElements,
+    'whiteout': whiteoutElements,
+    'link': linkElements,
+    'highlight': highlightElements,
+    'shape': shapeElements,
+  };
   const pdfContainer = document.getElementById("pdfContainer");
   if (pdfContainer === null) return;
   const drawRect = pdfContainer.getBoundingClientRect();
 
   dragStartPos.value = {
-    x: event.clientX - textElements.value[index].x - drawRect.left,
-    y: event.clientY - textElements.value[index].y - drawRect.top,
+    x: event.clientX - elements[element].value[index].x - drawRect.left,
+    y: event.clientY - elements[element].value[index].y - drawRect.top,
   };
 }
 
-function deleteTextElement(key: string|number) {
+function deleteTextElement(key: string | number) {
   delete textElements.value[key]
 }
 
-function onDragEnd(index: number | string, event: any) {
+function deleteImageElement(key: string | number) {
+  delete imageElements.value[key]
+}
+
+function deleteWhiteoutElement(key: string | number) {
+  delete whiteoutElements.value[key]
+}
+
+function deleteHighlightElement(key: string | number) {
+  delete highlightElements.value[key]
+}
+
+function onDragEnd(index: number | string, event: any, element: 'text' | 'image' | 'whiteout' | 'link' | 'highlight' | 'shape') {
   const pdfContainer = document.getElementById("pdfContainer");
   if (pdfContainer === null) return;
   const drawRect = pdfContainer.getBoundingClientRect();
@@ -147,8 +375,8 @@ function onDragEnd(index: number | string, event: any) {
   const newLeft = event.clientX - dragStartPos.value.x - drawRect.left;
   const newTop = event.clientY - dragStartPos.value.y - drawRect.top;
 
-  textElements.value[index].x = newLeft;
-  textElements.value[index].y = newTop;
+  draggableElements[element].value[index].x = newLeft;
+  draggableElements[element].value[index].y = newTop;
 }
 
 const renderPage = async (pageIndex: number) => {
@@ -234,24 +462,12 @@ const removePage = async (pageIndex: number) => {
   }
 }
 
-const hexToRgb = (hex: string) => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : { r: 0, g: 0, b: 0 }
-}
-
-const addTextToPage = async (pageIndex: number, settings: any) => {
-  const textId = `text-${Date.now()}-${Math.random()}`
-  textElements.value[textId] = {
-    x: 50,
-    y: 50,
-    content: settings.content,
-    fontSize: settings.fontSize,
-    color: settings.color,
-    lineHeight: settings.lineHeight,
+const addElementToPage = async (pageIndex: number, settings: any, element: DraggableElementsType) => {
+  const elementId = `element-${Date.now()}-${Math.random()}`
+  draggableElements[element].value[elementId] = {
+    x: settings.x ?? 50,
+    y: settings.y ?? 50,
+    ...settings,
     pageIndex
   }
 }
@@ -265,53 +481,66 @@ const getPageTextElements = (pageIndex: number) => {
   }, {} as typeof textElements.value)
 }
 
-const updatePDFWithText = async () => {
+const getPageImageElements = (pageIndex: number) => {
+  return Object.entries(imageElements.value).reduce((acc, [id, image]) => {
+    if (image.pageIndex === pageIndex) {
+      acc[id] = image
+    }
+    return acc
+  }, {} as typeof imageElements.value)
+}
+
+const updatePDFWithNewContent = async () => {
   const pages = (props.pdf as PDFDocument).getPages();
-  pages.forEach((page, pageIndex) => {
+  const pageElements = pages.map((_, pageIndex) => {
     const pageTexts = getPageTextElements(pageIndex)
-    textElements.value = {};
-    Object.values(pageTexts).forEach(text => {
-      const { r, g, b } = hexToRgb(text.color)
-      page.drawText(text.content, {
-        x: text.x,
-        y: page.getHeight() - text.y,
-        size: parseInt(text.fontSize, 10),
-        color: rgb(r / 255, g / 255, b / 255),
-        lineHeight: parseInt(text.lineHeight, 10)
-      })
-    })
-  });
+    const pageImages = getPageImageElements(pageIndex)
+    const pageLinks = Object.values(linkElements.value).filter(l => l.pageIndex === pageIndex)
+    const pageWhiteouts = Object.values(whiteoutElements.value).filter(w => w.pageIndex === pageIndex)
+    const pageHighlights = Object.values(highlightElements.value).filter(h => h.pageIndex === pageIndex)
+    const pageDrawings = Object.values(drawElements.value).filter(d => d.pageIndex === pageIndex)
+    const pageShapes = Object.values(shapeElements.value).filter(s => s.pageIndex === pageIndex)
 
-  // const newPdf = await PDFDocument.create()
-  // if (!(props.pdf as PDFDocument)) {
-  //   throw new Error("pdf is undefined or null in PDFPageViewer");
-  // }
-  // const pages = await newPdf.copyPages((props.pdf as PDFDocument), [0, 1]) //(props.pdf as PDFDocument).getPageIndices()
+    return {
+      links: pageLinks,
+      shapes: pageShapes,
+      highlights: pageHighlights,
+      whiteouts: pageWhiteouts,
+      drawings: pageDrawings,
+      texts: Object.values(pageTexts),
+      images: Object.values(pageImages)
+    }
+  })
 
-  // pages.forEach((page, pageIndex) => {
-  //   const pageTexts = getPageTextElements(pageIndex)
+  const contentUpdater = new PDFContentUpdater()
+  await contentUpdater.updatePDFContent(props.pdf as PDFDocument, pageElements as any)
 
-  //   Object.values(pageTexts).forEach(text => {
-  //     const { r, g, b } = hexToRgb(text.color)
-  //     page.drawText(text.content, {
-  //       x: text.x,
-  //       y: 50,
-  //       size: 23,
-  //       color: rgb(r / 255, g / 255, b / 255),
-  //       lineHeight: 1.2
-  //     })
-  //   })
-  //   newPdf.addPage(page)
-  // })
-
-  // emit('update:pdf', newPdf)
+  // Clear all elements after updating
+  textElements.value = {}
+  imageElements.value = {}
+  linkElements.value = {}
+  whiteoutElements.value = {}
+  highlightElements.value = {}
+  drawElements.value = {}
+  shapeElements.value = {}
 }
 
 onMounted(() => {
-  eventBus.on('addTextToPDF', (data: any) => {
-    if (data.isCurrentPage) {
-      addTextToPage(currentPage.value, data.settings)
+  for (const element in draggableElemebtsEvents) {
+    eventBus.on(element, (data: any) => {
+      if (data.isCurrentPage) {
+        addElementToPage(currentPage.value, data.settings, (draggableElemebtsEvents as any)[element])
+      }
+    });
+  }
+  eventBus.on('toggleDrawing', (data: any) => {
+    isDrawingMode.value = data.isDrawing;
+    if (data.isDrawing) {
+      drawSettings.value = { ...data.settings };
     }
+  });
+  eventBus.on('updateDrawSettings', (settings: any) => {
+    drawSettings.value = { ...settings };
   });
   // Let the intersection observer handle initial rendering
   Object.entries(pageRefs.value).forEach(([index, element]) => {
@@ -320,14 +549,16 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  eventBus.off('addTextToPDF');
+  for (const element in draggableElemebtsEvents) eventBus.off(element);
+  eventBus.off('toggleDrawing');
+  eventBus.off('updateDrawSettings');
   cleanup()
   observer.disconnect()
+  document.removeEventListener('mousemove', onResize);
+  document.removeEventListener('mouseup', onResizeEnd);
 })
 
 defineExpose({
-  updatePDFWithText
+  updatePDFWithNewContent
 })
 </script>
-
-<style></style>

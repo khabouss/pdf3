@@ -33,7 +33,7 @@
             </svg>
           </button>
           <div v-if="activeTool === tool.id">
-            <component :is="loadToolComponent(tool.id)" :key="tool.id" />
+            <component :is="loadToolComponent(tool.id)" :key="tool.id" :pdf="props.pdf" />
           </div>
         </div>
       </div>
@@ -47,6 +47,15 @@ import { useWindowSize } from '@vueuse/core'
 import { pdfTools } from './tools/PDFTools'
 import TextTool from '@/components/tools/TextTool.vue';
 import ImageTool from './tools/ImageTool.vue';
+import WhiteoutTool from './tools/WhiteoutTool.vue';
+import LinksTool from './tools/LinksTool.vue';
+import HighlightTool from './tools/HighlightTool.vue';
+import DrawTool from './tools/DrawTool.vue';
+import ReorderTool from './tools/ReorderTool.vue';
+import ProtectTool from './tools/ProtectTool.vue';
+import ShapesTool from './tools/ShapesTool.vue';
+import CompressTool from './tools/CompressTool.vue';
+import MetadataTool from './tools/MetadataTool.vue';
 
 const eventBus = useNuxtApp().$eventBus as any;
 
@@ -59,7 +68,8 @@ const currentY = ref(0);
 const props = defineProps<{
   isOpen: boolean
   currentPage?: number
-  toolsRef?: any
+  toolsRef?: any,
+  pdf?: PDFDocument | null
 }>()
 
 const emit = defineEmits(['update:closePopup'])
@@ -105,6 +115,24 @@ const loadToolComponent = (id: string) => {
       return TextTool;
     case 'image':
       return ImageTool;
+    case 'whiteout':
+      return WhiteoutTool;
+    case 'highlight':
+      return HighlightTool;
+    case 'links':
+      return LinksTool;
+    case 'reorder':
+      return ReorderTool;
+    case 'protect':
+      return ProtectTool;
+    case 'draw':
+      return DrawTool;
+    case 'shapes':
+      return ShapesTool;
+    case 'metadata':
+      return MetadataTool;
+    case 'compress':
+      return CompressTool;
     // Add cases for all tools
     default:
       return null;
@@ -113,7 +141,7 @@ const loadToolComponent = (id: string) => {
 
 const hasSettings = (toolId: string): boolean => {
   // Add more tools that have settings panels
-  return ['text', 'image', 'whiteout', 'highlight', 'draw', 'shapes'].includes(toolId)
+  return ['text', 'image', 'whiteout', 'highlight', 'draw', 'shapes', 'links', 'reorder', 'protect', 'metadata', 'compress'].includes(toolId)
 }
 
 onMounted(() => {
