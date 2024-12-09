@@ -34,24 +34,24 @@
 
               <TextComponent v-for="(textElement, index2) in textElements" :key="index2"
                 @drag-start="($event) => onDragStart(index2, $event, 'text')"
-                @drag-end="($event) => onDragEnd(index2, $event, 'text')" @delete-element="deleteTextElement(index2)"
+                @drag-end="($event) => onDragEnd(index2, $event, 'text')" @delete-element="deleteElement(index2, 'text')"
                 :text-element="textElement" :index="index" />
 
               <ImageComponent v-for="(imageElement, index2) in imageElements" :key="index2"
                 @resize-start="($event) => onResizeStart(index2, $event)"
                 @drag-start="($event) => onDragStart(index2, $event, 'image')"
-                @drag-end="($event) => onDragEnd(index2, $event, 'image')" @delete-element="deleteImageElement(index2)"
+                @drag-end="($event) => onDragEnd(index2, $event, 'image')" @delete-element="deleteElement(index2, 'image')"
                 :image-element="imageElement" :index="index" />
 
               <WhiteoutComponent v-for="(whiteoutElement, index2) in whiteoutElements" :key="index2"
                 @drag-start="($event) => onDragStart(index2, $event, 'whiteout')"
                 @drag-end="($event) => onDragEnd(index2, $event, 'whiteout')"
-                @delete-element="deleteWhiteoutElement(index2)" :whiteout-element="whiteoutElement" :index="index" />
+                @delete-element="deleteElement(index2, 'whiteout')" :whiteout-element="whiteoutElement" :index="index" />
 
               <HighlightComponent v-for="(highlightElement, index2) in highlightElements" :key="index2"
                 @drag-start="($event) => onDragStart(index2, $event, 'highlight')"
                 @drag-end="($event) => onDragEnd(index2, $event, 'highlight')"
-                @delete-element="deleteHighlightElement(index2)" :highlight-element="highlightElement" :index="index" />
+                @delete-element="deleteElement(index2, 'highlight')" :highlight-element="highlightElement" :index="index" />
 
               <canvas id="contentCanvas" :width="595" :height="842" class="w-full h-full"></canvas>
 
@@ -351,22 +351,6 @@ function onDragStart(index: number | string, event: any, element: DraggableEleme
   };
 }
 
-function deleteTextElement(key: string | number) {
-  delete textElements.value[key]
-}
-
-function deleteImageElement(key: string | number) {
-  delete imageElements.value[key]
-}
-
-function deleteWhiteoutElement(key: string | number) {
-  delete whiteoutElements.value[key]
-}
-
-function deleteHighlightElement(key: string | number) {
-  delete highlightElements.value[key]
-}
-
 function onDragEnd(index: number | string, event: any, element: DraggableElementsType) {
   const pdfContainer = document.getElementById("pdfContainer");
   if (pdfContainer === null) return;
@@ -377,6 +361,10 @@ function onDragEnd(index: number | string, event: any, element: DraggableElement
 
   draggableElements[element].value[index].x = newLeft;
   draggableElements[element].value[index].y = newTop;
+}
+
+function deleteElement(key: string | number, element: DraggableElementsType) {
+  delete draggableElements[element].value[key];
 }
 
 const renderPage = async (pageIndex: number) => {
@@ -451,8 +439,9 @@ const observer = new IntersectionObserver(observerCallback, {
 })
 
 const removePage = async (pageIndex: number) => {
+  const pdfDoc = (props.pdf as PDFDocument);
   try {
-    if (!(props.pdf as PDFDocument) || (props.pdf as PDFDocument).getPageCount() <= 1) {
+    if (!pdfDoc || pdfDoc?.getPageCount() <= 1) {
       console.warn('Cannot remove the last page')
       return
     }
@@ -472,43 +461,36 @@ const addElementToPage = async (pageIndex: number, settings: any, element: Dragg
   }
 }
 
-const getPageTextElements = (pageIndex: number) => {
-  return Object.entries(textElements.value).reduce((acc, [id, text]) => {
-    if (text.pageIndex === pageIndex) {
-      acc[id] = text
+const getPageElements = (pageIndex: number, element: DraggableElementsType) => {
+  const draggableElement = draggableElements[element];
+  return Object.entries(draggableElement.value).reduce((acc, [id, element]) => {
+    if (element.pageIndex === pageIndex) {
+      acc[id] = element
     }
     return acc
-  }, {} as typeof textElements.value)
-}
-
-const getPageImageElements = (pageIndex: number) => {
-  return Object.entries(imageElements.value).reduce((acc, [id, image]) => {
-    if (image.pageIndex === pageIndex) {
-      acc[id] = image
-    }
-    return acc
-  }, {} as typeof imageElements.value)
+  }, {} as typeof draggableElement.value)
 }
 
 const updatePDFWithNewContent = async () => {
   const pages = (props.pdf as PDFDocument).getPages();
   const pageElements = pages.map((_, pageIndex) => {
-    const pageTexts = getPageTextElements(pageIndex)
-    const pageImages = getPageImageElements(pageIndex)
-    const pageLinks = Object.values(linkElements.value).filter(l => l.pageIndex === pageIndex)
-    const pageWhiteouts = Object.values(whiteoutElements.value).filter(w => w.pageIndex === pageIndex)
-    const pageHighlights = Object.values(highlightElements.value).filter(h => h.pageIndex === pageIndex)
+    const pageTexts = getPageElements(pageIndex, 'text')
+    const pageImages = getPageElements(pageIndex, 'image')
+    const pageLinks = getPageElements(pageIndex, 'link')
+    const pageWhiteouts = getPageElements(pageIndex, 'whiteout')
+    const pageHighlights = getPageElements(pageIndex, 'highlight')
+    const pageShapes = getPageElements(pageIndex, 'shape')
+
     const pageDrawings = Object.values(drawElements.value).filter(d => d.pageIndex === pageIndex)
-    const pageShapes = Object.values(shapeElements.value).filter(s => s.pageIndex === pageIndex)
 
     return {
-      links: pageLinks,
-      shapes: pageShapes,
-      highlights: pageHighlights,
-      whiteouts: pageWhiteouts,
-      drawings: pageDrawings,
       texts: Object.values(pageTexts),
-      images: Object.values(pageImages)
+      images: Object.values(pageImages),
+      links: Object.values(pageLinks),
+      shapes: Object.values(pageShapes),
+      highlights: Object.values(pageHighlights),
+      whiteouts: Object.values(pageWhiteouts),
+      drawings: pageDrawings,
     }
   })
 
@@ -516,13 +498,8 @@ const updatePDFWithNewContent = async () => {
   await contentUpdater.updatePDFContent(props.pdf as PDFDocument, pageElements as any)
 
   // Clear all elements after updating
-  textElements.value = {}
-  imageElements.value = {}
-  linkElements.value = {}
-  whiteoutElements.value = {}
-  highlightElements.value = {}
+  for (const element in draggableElements) (draggableElements as any)[element].value = {};
   drawElements.value = {}
-  shapeElements.value = {}
 }
 
 onMounted(() => {
